@@ -1,0 +1,711 @@
+        create or replace PACKAGE BODY "WH_PKG" AS
+
+            PROCEDURE DIM_LOAD_VEHICLETYPE IS
+        VEHICLETYPE_cursor        SYS_REFCURSOR;
+        VEHICLETYPE_name       TRANSPORTSTAGE_TEMP.ROADCATEGORY%TYPE;
+        VEHICLETYPE_Count     number;
+        BEGIN
+        load_VEHICLETYPE(p_recordset => VEHICLETYPE_cursor);
+            LOOP
+            BEGIN
+            FETCH VEHICLETYPE_cursor
+            INTO  VEHICLETYPE_name;
+            EXIT WHEN VEHICLETYPE_cursor%NOTFOUND;
+        Insert Into Dim_VEHICLETYPE(VEHICLETYPENAME) values(VEHICLETYPE_name);
+            EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values(' VEHICLETYPE Ins', VEHICLETYPE_name||' Already Exists');
+           WHEN OTHERS THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values(' VEHICLETYPE Ins', VEHICLETYPE_name||' SOMETHING WENT WRONG! CANNOT INSERT!');
+            END;
+             END LOOP;
+          CLOSE VEHICLETYPE_cursor;
+        END;
+
+
+        PROCEDURE DIM_LOAD_ROAD IS
+        ROAD_cursor        SYS_REFCURSOR;
+        ROAD_NAME TRANSPORTSTAGE_TEMP.ROAD%TYPE;
+        ROADLENGTH TRANSPORTSTAGE_TEMP.LINKLENGTH_MILES%TYPE;
+        ROAD_STARTJUNCTION TRANSPORTSTAGE_TEMP.StartJunction%TYPE;
+        ROAD_ENDJUNCTION TRANSPORTSTAGE_TEMP.EndJunction%TYPE;
+        ROAD_Count number;
+        BEGIN
+        load_ROAD(p_recordset => ROAD_cursor);
+        LOOP
+            FETCH ROAD_cursor
+            INTO  ROAD_NAME ,ROAD_STARTJUNCTION,ROAD_ENDJUNCTION ,ROADLENGTH ;
+            EXIT WHEN ROAD_cursor%NOTFOUND;
+        select count(ROADCODE) into ROAD_Count from dim_ROAD where ROADCODE=ROAD_name and  STARTJUNCTION=ROAD_STARTJUNCTION and ENDJUNCTION=ROAD_ENDJUNCTION;
+        IF nvl(ROAD_Count,0) >0 THEN
+         Insert Into load_errors (Error_Type,ERROR_DESC) values('ROAD Ins',ROAD_name||' Already Exists');
+        ELSE
+        BEGIN
+            INSERT INTO DIM_ROAD(ROADCODE,ROADNAME,LINKLENGTH,STARTJUNCTION,ENDJUNCTION,ISCURRENT)Values(ROAD_NAME,ROAD_NAME,ROADLENGTH ,ROAD_STARTJUNCTION,ROAD_ENDJUNCTION,1);
+             EXCEPTION        
+           WHEN OTHERS THEN
+    Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+        END;
+        END IF;
+             END LOOP;
+          CLOSE ROAD_cursor;
+        END;
+
+
+
+            PROCEDURE DIM_LOAD_ROADTYPE IS
+            ROADTYPE_cursor        SYS_REFCURSOR;
+        ROADTYPE_name       TRANSPORTSTAGE_TEMP.ROADCATEGORY%TYPE;
+        BEGIN
+        load_ROADTYPE(p_recordset => ROADTYPE_cursor);
+        LOOP
+            BEGIN
+            FETCH ROADTYPE_cursor
+            INTO  ROADTYPE_name;
+            EXIT WHEN ROADTYPE_cursor%NOTFOUND;
+         Insert Into Dim_ROADTYPE(ROADTYPENAME) values(ROADTYPE_name);
+        EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values(' ROADTYPE Ins', ROADTYPE_name||' Already Exists');
+           WHEN OTHERS THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values(' ROADTYPE Ins', ROADTYPE_name||' SOMETHING WENT WRONG! CANNOT INSERT!');
+            END;
+             END LOOP;
+          CLOSE ROADTYPE_cursor;
+        END;
+
+
+           create or replace   PROCEDURE FACT_LOAD_V6ORMOREAXLEARTICHGV(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='V6ORMOREAXLEARTICHGV';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFV6ORMOREAXLEARTICHGV)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , V6ORMOREAXLEARTICHGVCount);
+        EXCEPTION        
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+        END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+            PROCEDURE FACT_LOAD_V5AXLEARTICHGV(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='V5AXLEARTICHGV';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFV5AXLEARTICHGV)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , V5AXLEARTICHGVCount);
+        EXCEPTION        
+           WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+             END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+
+            PROCEDURE FACT_LOAD_V3OR4AXLEARTICHGV(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='V3OR4AXLEARTICHGV';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFV3OR4AXLEARTICHGV)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , V3OR4AXLEARTICHGVCount);
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+        PROCEDURE FACT_LOAD_V4OR5AXLERIGIDHGV(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='V4OR5AXLERIGIDHGV';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFV4OR5AXLERIGIDHGV)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , V4OR5AXLERIGIDHGVCount);
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+             END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+
+            PROCEDURE FACT_LOAD_V2AXLERIGIDHGV(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='V2AXLERIGIDHGV';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFV2AXLERIGIDHGV)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , V2AXLERIGIDHGVCount);
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+             END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+        PROCEDURE FACT_LOAD_V3AXLERIGIDHGV(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='V3AXLERIGIDHGV';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN;
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFV3AXLERIGIDHGV)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , V3AXLERIGIDHGVCount);
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+        PROCEDURE FACT_LOAD_MOTORCYCLE(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='MOTORCYCLES';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFMOTORCYCLES)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , MOTORCYCLESCount );
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+        PROCEDURE FACT_LOAD_LIGHTGOODSVEHICLES(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='LIGHTGOODSVEHICLES';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFLIGHTGOODSVEHICLE)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , LIGHTGOODSVEHICLESCount );
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+
+
+        PROCEDURE FACT_LOAD_BUSESCOACHES(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='BUSESCOACHES';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFBUSCOACHES)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , BUSESCOACHESCount );
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+        PROCEDURE FACT_LOAD_PEDALCYCLE (counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='PEDALCYCLES';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID, NUMBEROFPEDALCYCLE)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID , PEDALCYCLESCount);
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+        PROCEDURE FACT_LOAD_CARS(counter OUT NUMBER)
+        AS
+        factCars_cursor        SYS_REFCURSOR;
+        getCars_cursor SYS_REFCURSOR;
+        StageID     TRANSPORTSTAGE_TEMP.ID%TYPE;
+        StageREGIONID   DIM_REGION.REGIONID%type;
+        StageTimeID     DIM_TIME.TIMEID%type;
+        StageLOCALAUTHORITYID DIM_LOCALAUTHORITY.LOCALAUTHORITYID%type;
+        StageROADTYPEID DIM_ROADTYPE.ROADTYPEID%TYPE;
+        StageSKEY_ROAD DIM_ROAD.SKEY_ROAD%TYPE;
+        StageVehicleID DIM_VEHICLETYPE.VEHICLETYPEID%TYPE;
+        StageVehicleNAME DIM_VEHICLETYPE.VEHICLETYPENAME%TYPE:='CARSTAXIS';
+        PEDALCYCLESCount NUMBER;
+        MOTORCYCLESCount NUMBER;
+        CARSTAXISCount NUMBER;
+        BUSESCOACHESCount NUMBER;
+        LIGHTGOODSVEHICLESCount NUMBER;
+        V2AXLERIGIDHGVCount NUMBER;
+        V3AXLERIGIDHGVCount NUMBER;
+        V4OR5AXLERIGIDHGVCount NUMBER;
+        V3OR4AXLEARTICHGVCount NUMBER;
+        V5AXLEARTICHGVCount NUMBER;
+        V6ORMOREAXLEARTICHGVCount NUMBER;
+        INSERT_COUNT NUMBER:=0;
+        BEGIN
+         load_Fact_FUNDAMENTALS(p_recordset => factCars_cursor);
+        select VEHICLETYPEID into StageVehicleID from DIM_VEHICLETYPE where VEHICLETYPENAME=StageVehicleNAME;
+        LOOP
+        BEGIN
+            FETCH factCars_cursor
+            INTO  StageID,StageREGIONID,StageTimeID,StageLOCALAUTHORITYID ,StageROADTYPEID ,StageSKEY_ROAD,PEDALCYCLESCount ,MOTORCYCLESCount ,CARSTAXISCount ,BUSESCOACHESCount ,LIGHTGOODSVEHICLESCount ,V2AXLERIGIDHGVCount ,V3AXLERIGIDHGVCount ,V4OR5AXLERIGIDHGVCount ,V3OR4AXLEARTICHGVCount ,V5AXLEARTICHGVCount ,V6ORMOREAXLEARTICHGVCount ;
+            EXIT WHEN factCars_cursor%NOTFOUND;
+        INSERT_COUNT:=INSERT_COUNT+1;
+        INSERT INTO FACT_TRANSPORTATION(REGIONID,TIMEID,ROADTYPEID,SKEY_ROAD,VEHICLETYPEID,LOCALAUTHORITYID,NUMBEROFCARS)VALUES(StageREGIONID,StageTimeID,StageROADTYPEID,StageSKEY_ROAD, StageVehicleID ,StageLOCALAUTHORITYID ,CARSTAXISCount );
+        WHEN OTHERS THEN
+        Insert Into load_errors (Error_Type,ERROR_DESC) values(' Fact Ins', 'Loading Fact data went wrong');
+         END;
+             END LOOP;
+        counter:=INSERT_COUNT;
+          CLOSE factCars_cursor;
+        END;
+
+
+
+        PROCEDURE load_Fact_FUNDAMENTALS (p_recordset OUT SYS_REFCURSOR) AS
+        BEGIN
+          OPEN p_recordset FOR
+        select U.id,rg.REGIONID,t.timeid,l.LOCALAUTHORITYID,rt.ROADTYPEID,r.SKEY_ROAD,u.PEDALCYCLES,u.MOTORCYCLES,u.CARSTAXIS,u.BUSESCOACHES,u.LIGHTGOODSVEHICLES,u.V2AXLERIGIDHGV,u.V3AXLERIGIDHGV, u.V4OR5AXLERIGIDHGV,u.V3OR4AXLEARTICHGV,u.V5AXLEARTICHGV,u.V6ORMOREAXLEARTICHGV
+        from dim_region rg
+        INNER JOIN TRANSPORTSTAGE_TEMP u on u.region=rg.REGIONNAME
+        INNER JOIN DIM_TIME t on t.YEAR=u.YEAR
+        INNER JOIN DIM_LOCALAUTHORITY l on l.LOCALAUTHORITYNAME=u.LOCALAUTHORITY
+        INNER JOIN DIM_ROADTYPE rt on rt.ROADTYPENAME=u.ROADCATEGORY
+        INNER JOIN DIM_ROAD r on r.ROADNAME=u.ROAD AND r.STARTJUNCTION=u.STARTJUNCTION AND r.ENDJUNCTION=u.ENDJUNCTION
+        ORDER BY u.ID;END;
+
+
+
+        PROCEDURE load_ROAD(p_recordset OUT SYS_REFCURSOR) AS
+        BEGIN
+          OPEN p_recordset FOR
+                 SELECT ROAD,STARTJUNCTION,ENDJUNCTION, LINKLENGTH_MILES FROM TRANSPORTSTAGE_TEMP
+        WHERE LINKLENGTH_MILES IN (
+          SELECT MAX(LINKLENGTH_MILES) FROM TRANSPORTSTAGE_TEMP GROUP BY ROAD,LOCALAUTHORITY
+        ) ORDER BY ROAD;
+        END;
+
+
+        PROCEDURE load_VEHICLETYPE(p_recordset OUT SYS_REFCURSOR) AS
+        BEGIN
+          OPEN p_recordset FOR
+            select distinct TEMP_NAME from TEMP_VEHICLETYPE
+            ORDER BY TEMP_NAME;
+        END;
+
+
+        PROCEDURE load_ROADTYPE(p_recordset OUT SYS_REFCURSOR) AS
+        BEGIN
+          OPEN p_recordset FOR
+            select distinct ROADCATEGORY from TRANSPORTSTAGE_TEMP
+            ORDER BY ROADCATEGORY;
+        END;
+
+
+        procedure data_quality_check (pv_rows OUT NUMBER)
+        IS
+        BEGIN
+        pv_rows := 0;
+        INSERT INTO data_quality_errors
+        SELECT  DE_SEQ.nextval, TRANSPORTSTAGE.ID, 'null values', 'not fixed'
+        FROM TRANSPORTSTAGE WHERE YEAR IS NULL
+        OR REGION IS NULL
+        OR LOCALAUTHORITY IS NULL
+        OR ROAD IS NULL
+        OR ROADCATEGORY IS NULL
+        OR STARTJUNCTION IS NULL
+        OR ENDJUNCTION IS NULL
+        OR LINKLENGTH_MILES IS NULL;
+        pv_rows := TO_CHAR(SQL%RowCount);
+
+        INSERT INTO TRANSPORTSTAGE_TEMP (SELECT * FROM TRANSPORTSTAGE  WHERE YEAR IS NOT NULL
+        AND REGION IS NOT NULL
+        AND LOCALAUTHORITY IS NOT NULL
+        AND ROAD IS NOT NULL
+        AND ROADCATEGORY IS NOT NULL
+        AND STARTJUNCTION IS NOT NULL
+        AND ENDJUNCTION IS NOT NULL
+        AND LINKLENGTH_MILES IS NOT NULL);
+        END data_quality_check;
+
+        PROCEDURE load_region (p_recordset OUT SYS_REFCURSOR) IS
+            BEGIN
+            OPEN p_recordset FOR
+            select distinct region from TRANSPORTSTAGE_TEMP
+            ORDER BY REGION;
+        END load_region;
+
+        PROCEDURE DIM_LOAD_REGION
+        AS
+        l_cursor        SYS_REFCURSOR;
+        REGION_name       TRANSPORTSTAGE_TEMP.REGION%TYPE;
+        countRegion     number;
+        BEGIN
+            load_region (p_recordset => l_cursor);
+        LOOP
+        BEGIN
+            FETCH l_cursor
+            INTO  REGION_name;
+            EXIT WHEN l_cursor%NOTFOUND;
+           Insert Into Dim_Region (REGIONNAME) values(REGION_name);
+        EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values('Region Ins',REGION_name||' Already Exists');
+           WHEN OTHERS THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values('Region Ins',REGION_name||' SOMETHING WENT WRONG! CANNOT INSERT!');
+        END;
+             END LOOP;
+          CLOSE l_cursor;
+        END DIM_LOAD_REGION;
+
+
+        PROCEDURE load_time (p_recordset OUT SYS_REFCURSOR) AS
+        BEGIN
+          OPEN p_recordset FOR
+            select distinct YEAR from TRANSPORTSTAGE_TEMP
+            ORDER BY YEAR;
+        END  load_time;
+
+
+        PROCEDURE DIM_LOAD_TIME AS
+        time_cursor        SYS_REFCURSOR;
+        YEAR_name       TRANSPORTSTAGE_TEMP.YEAR%TYPE;
+        YEAR_Count     number;
+        BEGIN
+        load_time (p_recordset => time_cursor);
+        LOOP
+            BEGIN
+            FETCH time_cursor
+            INTO  YEAR_name;
+            EXIT WHEN time_cursor%NOTFOUND;
+           Insert Into Dim_time (YEAR) values(YEAR_name);
+        EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values('Time Ins',YEAR_name||' Already Exists');
+           WHEN OTHERS THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values('Time Ins',YEAR_name||' SOMETHING WENT WRONG! CANNOT INSERT!');
+        END;
+         END LOOP;
+          CLOSE time_cursor;
+        END DIM_LOAD_TIME ;
+
+        PROCEDURE load_LOCALAUTHORITY (p_recordset OUT SYS_REFCURSOR) AS
+        BEGIN
+          OPEN p_recordset FOR
+            select distinct LOCALAUTHORITY from TRANSPORTSTAGE_TEMP
+            ORDER BY LOCALAUTHORITY;
+        END load_LOCALAUTHORITY;
+
+        PROCEDURE DIM_LOAD_LOCALAUTHORITY AS
+        LOCALAUTHORITY_cursor        SYS_REFCURSOR;
+        LOCALAUTHORITY_name       TRANSPORTSTAGE_TEMP.LOCALAUTHORITY%TYPE;
+        LOCALAUTHORITY_Count     number;
+        BEGIN
+        load_LOCALAUTHORITY(p_recordset => LOCALAUTHORITY_cursor);
+        LOOP
+            BEGIN
+            FETCH LOCALAUTHORITY_cursor
+            INTO  LOCALAUTHORITY_name;
+            EXIT WHEN LOCALAUTHORITY_cursor%NOTFOUND;
+           Insert Into Dim_LOCALAUTHORITY(LOCALAUTHORITYNAME) values(LOCALAUTHORITY_name);
+        EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+              Insert Into load_errors (Error_Type,ERROR_DESC) values(' LOCALAUTHORITY Ins', LOCALAUTHORITY_name||' Already Exists');
+           WHEN OTHERS THEN
+                  Insert Into load_errors (Error_Type,ERROR_DESC) values(' LOCALAUTHORITY Ins', LOCALAUTHORITY_name||' SOMETHING WENT WRONG! CANNOT INSERT!');
+            END;
+            END LOOP;
+        CLOSE LOCALAUTHORITY_cursor;
+        END DIM_LOAD_LOCALAUTHORITY;
+
+
+        END;
